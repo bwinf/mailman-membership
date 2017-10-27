@@ -1,0 +1,190 @@
+Der API-Wrapper unterstützt die Endpunkte:
+
+/add:            Hinzufügen von E-Mailadressen
+/remove:         Entfernen von E-Mailadressen
+/clear:          Entfernen aller E-Mailadressen
+/replace:        Entfernen und hinzufügen (in dieser Reihenfolge) von
+                 E-Mailadressen
+/replace_all:    Entfernen aller und hinzufügen von E-Mailadressen
+
+
+Jeder dieser Endpunkte erwartet zwei POST-Parameter:
+
+data:      Ein JSON-String
+signature: Ein Hash der aus dem JSON-String und dem Shared-Secret
+           gebildet wird
+
+
+Der Hash ist dabei der SHA512-Hash aus der aneinanderkettung des JSON-
+String 'data' und des Shared-Secret als Hexadezimalstring. In Python:
+
+  sha512(data + secret).hexdigest()
+
+
+Das JSON-Objekt muss je nach Endpunkt die folgende Struktur haben:
+
+/add:           {"mailinglist": "…", "addresses": […]}
+/remove         {"mailinglist": "…", "addresses": […]}
+/clear          {"mailinglist": "…"}
+/replace        {"mailinglist": "…", "add": […], "remove": […]}
+/replace_all    {"mailinglist": "…", "addresses": […]}
+
+
+Die API gibt einen der folgenden Statuscodes zurück:
+
+200 OK:                     Prinzipiell alles in Ordnung, ggf. aber
+                            Fehler mit einzelnen oder allen Adressen
+400 Bad Request:            Fehler in der Struktur der POST-Daten (auch
+                            JSON)
+403 Forbidden:              Ungültige Signatur
+404 Not Found:              URL nicht gültig
+405 Method Not Allowed:     Kein POST-Request
+422 Unprocessable Entity:   Fehler bei der Verbindung zur Mailman-API
+500 Internal Server Error:  Unerwarteter Fehler
+
+
+Außer im Fall von 500, ist die Antwort ein JSON-Objekt, das immer ein
+Feld "status" enthält mit den Werten "ok" oder "failed". Falls der
+Statuscode /nicht/ 200 ist, ist "status" immer "failed":
+
+{"status": "failed", reason: "<Begründung>", …}
+
+
+Falls der Statuscode 200 ist, gibt es auf jeden Fall noch die Felder
+"succeded" und "failed":
+
+{"status": "ok", "failed": […], "succeded": […]} ODER
+{"status": "failed", "reason": "<Bgr.>", "failed": […], "succeded": […]}
+
+
+Insbesondere: Wenn die Liste "failed" nichtleer ist und "succeded" leer,
+wird "status": "failed" und "reason": "All operations failed."
+zurückgegeben:
+
+{"status": "failed", "reason": "All operations failed.", "failed": […],
+ "succeded": []}
+
+
+Hier ein paar Beispiele der Abfrage mit 'curl':
+
+Erfolgreiches hinzufügen (Status 200):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub2@bla.com"]}' -d signature=x
+  {"failed": [], "succeded": [{"address": "blub2@bla.com"}], "status": "ok"}
+
+Erfolgreiches entfernen (Status 200):
+  $ curl localhost:8080/remove -d data='{"mailinglist":"blalist@example.com","addresses":["blub2@bla.com"]}' -d signature=x
+  {"failed": [], "succeded": [{"address": "blub2@bla.com"}], "status": "ok"}
+
+Fehler bei Hinzufügen (Status 200):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub@bla.com"]}' -d signature=x
+  {"failed": [{"address": "blub@bla.com", "reason": "HTTP Error 409: b'Member already subscribed'"}], "succeded": [], "status": "failed", "reason": "All operations failed."}
+
+Fehler bei Entfernen (Status 200):
+  $ curl localhost:8080/remove -d data='{"mailinglist":"blalist@example.com","addresses":["blub3@bla.com"]}' -d signature=x
+  {"failed": [{"address": "blub3@bla.com", "reason": "blub3@bla.com is not a member address of blalist@example.com"}], "succeded": [], "status": "failed", "reason": "All operations failed."}
+
+Partieller Fehler (bei Hinzufügen) (Status 200):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub3@bla.com", "blub4@bla.com"]}' -d signature=x
+  {"failed": [{"address": "blub3@bla.com", "reason": "HTTP Error 409: b'Member already subscribed'"}], "succeded": [{"address": "blub4@bla.com"}], "status": "ok"}
+
+Partieller Fehler bei Ersetzen (Status 200):
+  $ curl localhost:8080/replace -d data='{"mailinglist":"blalist@example.com","add":["blub3@bla.com", "blub4@bla.com"],"remove":["blub3@bla.com","blub5@bla.com"]}' -d signature=x
+  {"failed": [{"address": "blub5@bla.com", "reason": "blub5@bla.com is not a member address of blalist@example.com"}, {"address": "blub4@bla.com", "reason": "HTTP Error 409: b'Member already subscribed'"}], "succeded": [{"address": "blub3@bla.com"}, {"address": "blub3@bla.com"}], "status": "ok"}
+
+Fehler: Falsches Datenformat (Status 400):
+  $ curl localhost:8080/add -d blub='{"mailinglist":"blalist@example.com","addresses":["blub@bla.com"]}' -d signature=x
+  {"reason": "Data error: b'data'", "status": "failed"}
+
+Fehler: Mailman läuft nicht / API nicht erreichbar (Status 422):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub@bla.com"]}' -d signature=x
+  {"status": "failed", "reason": "Mailman error (blalist@example.com): Could not connect to Mailman API"}
+
+Fehler: Hash-Signatur nicht gültig (Status 403):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub2@bla.com"]}' -d signature=x
+  {"reason": "Could not verify authentication", "status": "failed"}
+
+Fehler: Robert hat Mist gebaut (Status 500):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub@bla.com"]}' -d signature=x
+  A server error occurred.  Please contact the administrator.
+
+
+Um Missverständnissen vorzubeugen, hier die Schemata der JSON-Objekte:
+
+Schema einer Anfrage:
+
+{
+    "$schema": "http://json-schema.org/draft-06/schema#",
+    "title": "Request",
+
+    "type": "object",
+    "properties": {
+        "mailinglist": {
+            "type": "string"
+        },
+        "addresses": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "add": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "remove": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    },
+    "required": ["mailinglist"]
+}
+
+
+Schema einer Antwort:
+
+{
+    "$schema": "http://json-schema.org/draft-06/schema#",
+    "title": "Response",
+
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string"
+        },
+        "reason": {
+            "type": "string"
+        },
+        "succeded": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "address": {
+                        "type": "string"
+                    },
+                },
+                "required": ["address"]
+            }
+        },
+        "failed": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "address": {
+                        "type": "string"
+                    },
+                    "reason": {
+                        "type": "string"
+                    },
+                },
+                "required": ["address", "reason"]
+            }
+        },
+    },
+    "required": ["status"]
+}

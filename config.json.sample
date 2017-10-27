@@ -1,0 +1,9 @@
+{
+    "resturl": "http://localhost:8001/3.0",
+    "restadmin": "restadmin",
+    "restpass": "restpass",
+    "lists": [
+        { "listaddress": "foolist@lists.example.com", "authkey": "1fa913dca0265b193637f97f86bdc8ec" },
+        { "listaddress": "barlist@lists.example.com", "authkey": "069854f7434b9b518b71b88c7fa16bf5" }
+    ]
+}
