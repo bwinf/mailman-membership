@@ -1,0 +1,191 @@
+The API supports the following endpoints:
+
+/add:            Add email addresses
+/remove:         Remove email addresses
+/clear:          Remove all email addresses
+/replace:        Remove and add (in this order) email addresses
+/replace_all:    Remove all email addresses and add new ones
+
+
+Every endpoint expects two POST parameters:
+
+data:      A JSON string
+signature: A hash of the JSON string together with a shared secret
+
+
+The hash is the SHA512-Hash of the concatenation of the JSON string
+'data' shared secret, represented as hexadecimals. In Python:
+
+  sha512(data + secret).hexdigest()
+
+
+The JSON objekt must have the following structure according to the
+corresponding endpoint:
+
+/add:           {"mailinglist": "…", "addresses": […]}
+/remove         {"mailinglist": "…", "addresses": […]}
+/clear          {"mailinglist": "…"}
+/replace        {"mailinglist": "…", "add": […], "remove": […]}
+/replace_all    {"mailinglist": "…", "addresses": […]}
+
+
+The API returns one of the following status codes:
+
+200 OK:                     Ok, but the addition or removal of some or
+                            all addresses may have failed
+400 Bad Request:            Invalid POST data or JSON object
+403 Forbidden:              Invalid signature
+404 Not Found:              Invalid URL
+405 Method Not Allowed:     Not a POST request
+422 Unprocessable Entity:   Error connecting to the internal mailman API
+500 Internal Server Error:  Unexpected error
+
+
+Except for status 500, the response is always a JSON object that always
+contains a field "status" which might eiter be "ok" or "failed". If the
+status is /not/ 200, the status is always "failed". (The reverse does not
+hold true.)
+
+{"status": "failed", reason: "<Begründung>", …}
+
+
+If the status is 200, the fields "succeded" and "failed" are present:
+
+{"status": "ok", "failed": […], "succeded": […]} ODER
+{"status": "failed", "reason": "<Bgr.>", "failed": […], "succeded": […]}
+
+
+Especially, if the list "failed" is non-empty and "succeded" is empty,
+the status will be "failed" and the "reason" will be
+"All operations failed.":
+
+{"status": "failed", "reason": "All operations failed.", "failed": […],
+ "succeded": []}
+
+
+
+This is the general schema of a request object:
+
+{
+    "$schema": "http://json-schema.org/draft-06/schema#",
+    "title": "Request",
+
+    "type": "object",
+    "properties": {
+        "mailinglist": {
+            "type": "string"
+        },
+        "addresses": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "add": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "remove": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    },
+    "required": ["mailinglist"]
+}
+
+
+This is the general schema of a response object:
+
+{
+    "$schema": "http://json-schema.org/draft-06/schema#",
+    "title": "Response",
+
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string"
+        },
+        "reason": {
+            "type": "string"
+        },
+        "succeded": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "address": {
+                        "type": "string"
+                    },
+                },
+                "required": ["address"]
+            }
+        },
+        "failed": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "address": {
+                        "type": "string"
+                    },
+                    "reason": {
+                        "type": "string"
+                    },
+                },
+                "required": ["address", "reason"]
+            }
+        },
+    },
+    "required": ["status"]
+}
+
+
+
+Some examples using 'curl' (not showing the valid signature):
+
+Successful adding (Status 200):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub2@bla.com"]}' -d signature=x
+  {"failed": [], "succeded": [{"address": "blub2@bla.com"}], "status": "ok"}
+
+Successful removal (Status 200):
+  $ curl localhost:8080/remove -d data='{"mailinglist":"blalist@example.com","addresses":["blub2@bla.com"]}' -d signature=x
+  {"failed": [], "succeded": [{"address": "blub2@bla.com"}], "status": "ok"}
+
+Failed adding (Status 200):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub@bla.com"]}' -d signature=x
+  {"failed": [{"address": "blub@bla.com", "reason": "HTTP Error 409: b'Member already subscribed'"}], "succeded": [], "status": "failed", "reason": "All operations failed."}
+
+Failed removal (Status 200):
+  $ curl localhost:8080/remove -d data='{"mailinglist":"blalist@example.com","addresses":["blub3@bla.com"]}' -d signature=x
+  {"failed": [{"address": "blub3@bla.com", "reason": "blub3@bla.com is not a member address of blalist@example.com"}], "succeded": [], "status": "failed", "reason": "All operations failed."}
+
+Partial error (adding) (Status 200):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub3@bla.com", "blub4@bla.com"]}' -d signature=x
+  {"failed": [{"address": "blub3@bla.com", "reason": "HTTP Error 409: b'Member already subscribed'"}], "succeded": [{"address": "blub4@bla.com"}], "status": "ok"}
+
+Partial error (replacing) (Status 200):
+  $ curl localhost:8080/replace -d data='{"mailinglist":"blalist@example.com","add":["blub3@bla.com", "blub4@bla.com"],"remove":["blub3@bla.com","blub5@bla.com"]}' -d signature=x
+  {"failed": [{"address": "blub5@bla.com", "reason": "blub5@bla.com is not a member address of blalist@example.com"}, {"address": "blub4@bla.com", "reason": "HTTP Error 409: b'Member already subscribed'"}], "succeded": [{"address": "blub3@bla.com"}, {"address": "blub3@bla.com"}], "status": "ok"}
+
+Wrong data format (Status 400):
+  $ curl localhost:8080/add -d blub='{"mailinglist":"blalist@example.com","addresses":["blub@bla.com"]}' -d signature=x
+  {"reason": "Data error: b'data'", "status": "failed"}
+
+Mailman not running / API not reachable (Status 422):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub@bla.com"]}' -d signature=x
+  {"status": "failed", "reason": "Mailman error (blalist@example.com): Could not connect to Mailman API"}
+
+Signature invalid (Status 403):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub2@bla.com"]}' -d signature=x
+  {"reason": "Could not verify authentication", "status": "failed"}
+
+Robert broke everything! (Status 500):
+  $ curl localhost:8080/add -d data='{"mailinglist":"blalist@example.com","addresses":["blub@bla.com"]}' -d signature=x
+  A server error occurred.  Please contact the administrator.
+
+
+
