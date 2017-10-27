@@ -15,17 +15,17 @@ def successful_response(start_response, succeded, failed):
         response = {'status': 'failed', 'reason': 'All operations failed.'}
     else:
         response = {'status': 'ok'}
-        
+
     response['succeded'] = succeded
     response['failed'] = failed
-        
+
     start_response('200 OK', [('content-type', 'application/json')])
     return [json.dumps(response).encode()]
 
 
 def failed_response(start_response, statuscode, reason):
     response = {'status': 'failed', 'reason': reason}
-        
+
     start_response(statuscode, [('content-type', 'application/json')])
     return [json.dumps(response).encode()]
 
@@ -33,7 +33,7 @@ def failed_response(start_response, statuscode, reason):
 def add_addresses(start_response, mailinglist, addresses):
     failed = []
     succeded = []
-    
+
     for address in addresses:
         try:
             mailinglist.subscribe(address, pre_verified=True, pre_confirmed=True, pre_approved=True)
@@ -47,7 +47,7 @@ def add_addresses(start_response, mailinglist, addresses):
 def remove_addresses(start_response, mailinglist, addresses):
     failed = []
     succeded = []
-    
+
     for address in addresses:
         try:
             mailinglist.unsubscribe(address)
@@ -94,7 +94,7 @@ def replace_all_addresses(start_response, mailinglist, addresses):
 
     for member in mailinglist.members:
         member.unsubscribe()
-        
+
     for address in addresses:
         try:
             mailinglist.subscribe(address, pre_verified=True, pre_confirmed=True, pre_approved=True)
@@ -108,10 +108,10 @@ def replace_all_addresses(start_response, mailinglist, addresses):
 # May throw any exception
 def get_post_data(environ):
     request_body_size = int(environ.get('CONTENT_LENGTH', 0))
-    
+
     request_body = environ['wsgi.input'].read(request_body_size)
     form_data = parse_qs(request_body)
-    
+
     json_data = form_data[b"data"][0]
     signature = form_data[b"signature"][0]
 
@@ -129,7 +129,7 @@ def get_post_data(environ):
         data['add'] = []
     if not 'remove' in data:
         data['remove'] = []
-    
+
     return data
 
 
