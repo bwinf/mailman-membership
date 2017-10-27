@@ -1,8 +1,13 @@
+#!/usr/bin/env python3
+__author__    = "Robert Czechoswki"
+__email__     = "czechowski@bwinf.de"
+__copyright__ = "© 2017, Bundesweite Informatikwettbewerbe (BWINF)"
+__license__   = "GPL 3"
+
 from urllib.parse import parse_qs
 from mailmanclient import Client
 import json
 import hashlib
-
 
 
 def successful_response(start_response, succeded, failed):
@@ -18,13 +23,11 @@ def successful_response(start_response, succeded, failed):
     return [json.dumps(response).encode()]
 
 
-
 def failed_response(start_response, statuscode, reason):
     response = {'status': 'failed', 'reason': reason}
         
     start_response(statuscode, [('content-type', 'application/json')])
     return [json.dumps(response).encode()]
-
 
 
 def add_addresses(start_response, mailinglist, addresses):
@@ -41,7 +44,6 @@ def add_addresses(start_response, mailinglist, addresses):
     return successful_response(start_response, succeded, failed)
 
 
-
 def remove_addresses(start_response, mailinglist, addresses):
     failed = []
     succeded = []
@@ -56,13 +58,11 @@ def remove_addresses(start_response, mailinglist, addresses):
     return successful_response(start_response, succeded, failed)
 
 
-
 def clear_addresses(start_response, mailinglist):
     for member in mailinglist.members:
         member.unsubscribe()
 
     return successful_response(start_response, [], [])
-
 
 
 def replace_addresses(start_response, mailinglist, old, new):
@@ -88,7 +88,6 @@ def replace_addresses(start_response, mailinglist, old, new):
     return successful_response(start_response, succeded, failed)
 
 
-
 def replace_all_addresses(start_response, mailinglist, addresses):
     failed = []
     succeded = []
@@ -104,7 +103,6 @@ def replace_all_addresses(start_response, mailinglist, addresses):
             failed.append({'address': address, 'reason': str(err) })
 
     return successful_response(start_response, succeded, failed)
-
 
 
 # May throw any exception
@@ -135,13 +133,11 @@ def get_post_data(environ):
     return data
 
 
-
 def get_config(filename):
     data = {}
     with open(filename) as data_file:
         data = json.load(data_file)
     return data
-
 
 
 def verify_signature(mailinglist, data):
@@ -153,7 +149,6 @@ def check_authorisation(config, data):
             if verify_signature(mailinglist, data):
                 return True
     return False
-
 
 
 def app(environ, start_response):
